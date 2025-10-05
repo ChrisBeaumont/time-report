@@ -1,0 +1,144 @@
+#!/home/chris/midi_recorder_venv/bin/python3
+# pip install mido
+import argparse, sys, re
+from pathlib import Path
+from datetime import datetime, timedelta
+from mido import MidiFile
+import os
+import json
+
+MIDI_EXTS = {".mid", ".midi"}
+
+def parse_args():
+    p = argparse.ArgumentParser(description="Summarize MIDI durations with week and month rollups.")
+    p.add_argument("path", help="Root path (e.g., 2025/09-September or 2025/09-September/12)", default="midi_recordings")
+    p.add_argument("--recursive", action="store_true", help="Recurse under the given path", default=True)
+    return p.parse_args()
+
+def hhmmss(seconds: float) -> str:
+    s = int(round(seconds))
+    h, r = divmod(s, 3600)
+    m, s = divmod(r, 60)
+    return f"{h:02d}:{m:02d}:{s:02d}"
+
+def find_date_from_path(p: Path):
+    """
+    Expect path fragments like .../<YYYY>/<MM-Name>/<DD>/file.mid
+    Returns date; None if it cannot be inferred.
+    """
+    parts = list(p.parts)
+    # find indices for YYYY, MM-Name, DD
+    for i in range(len(parts) - 3):
+        year_str = parts[i]
+        month_str = parts[i + 1]
+        day_str = parts[i + 2]
+        if re.fullmatch(r"\d{4}", year_str) and re.fullmatch(r"\d{2}-[A-Za-z]+", month_str) and re.fullmatch(r"\d{1,2}", day_str):
+            try:
+                y = int(year_str)
+                m = int(month_str.split("-")[0])
+                d = int(day_str)
+                return datetime(y, m, d).date()
+            except ValueError:
+                return None
+    return None
+
+def sunday_week_start(d: datetime.date) -> datetime.date:
+    # Monday=0 ... Sunday=6
+    return d - timedelta(days=(d.weekday() + 1) % 7)
+
+def iter_midi_files(root: Path, recursive: bool):
+    if root.is_file() and root.suffix.lower() in MIDI_EXTS:
+        yield root
+        return
+    if recursive:
+        yield from (p for p in root.rglob("*") if p.is_file() and p.suffix.lower() in MIDI_EXTS)
+    else:
+        yield from (p for p in root.glob("*") if p.is_file() and p.suffix.lower() in MIDI_EXTS)
+
+def get_time(path: Path):
+    try:
+        return float(os.getxattr(str(path), 'user.duration'))
+    except OSError:
+        duration = MidiFile(str(path)).length
+        os.setxattr(str(path), 'user.duration', str(duration).encode('utf8'))
+        return duration
+
+def main():
+    args = parse_args()
+    root = Path(args.path).resolve()
+    if not root.exists():
+        print(f"Path not found: {root}", file=sys.stderr)
+        sys.exit(1)
+
+    file_rows = []  # (date, path, seconds)
+    errors = []
+
+    for f in iter_midi_files(root, args.recursive):
+        d = find_date_from_path(f)
+        if d is None:
+            errors.append((str(f), "Could not infer date from path"))
+            continue
+        try:
+            sec = get_time(f)
+            file_rows.append((d, f, float(sec)))
+        except RuntimeError as e:
+            errors.append((str(f), f"Failed to read: {e!s}"))
+
+    if not file_rows and errors:
+        for path, msg in errors:
+            print(f"[skip] {path} -> {msg}", file=sys.stderr)
+        sys.exit(2)
+    elif not file_rows:
+        print("No MIDI files found.", file=sys.stderr)
+        sys.exit(3)
+
+    # Sort by date then name
+    file_rows.sort(key=lambda x: (x[0], str(x[1])))
+
+    # Per-day and per-aggregate sums
+    from collections import defaultdict, OrderedDict
+    day_sums = defaultdict(float)
+    week_sums = defaultdict(float)
+    month_sums = defaultdict(float)
+    total = 0.0
+
+    for d, p, s in file_rows:
+        day_sums[d] += s
+        ws = sunday_week_start(d)
+        week_sums[ws] += s
+        ym = (d.year, d.month)
+        month_sums[ym] += s
+        total += s
+
+    output = {
+        "days": {},
+        "weeks": {},
+        "months": {},
+        "total": None,
+        "errors": []
+    }
+
+    for d in sorted(day_sums):
+        output["days"][d.isoformat()] = hhmmss(day_sums[d])
+
+    for ws in sorted(week_sums):
+        we = ws + timedelta(days=6)
+        output["weeks"][f"{ws.isoformat()}..{we.isoformat()}"] = hhmmss(week_sums[ws])
+
+    for (y, m) in sorted(month_sums):
+        output["months"][f"{y}-{m:02d}"] = hhmmss(month_sums[(y, m)])
+
+    output["total"] = hhmmss(total)
+
+    for path, msg in errors:
+        output["errors"].append({"path": path, "message": msg})
+
+    print(json.dumps(output, indent=2))
+
+    if errors:
+        print("\n# Skipped files", file=sys.stderr)
+        for path, msg in errors:
+            print(f"{path} -> {msg}", file=sys.stderr)
+
+if __name__ == "__main__":
+    main()

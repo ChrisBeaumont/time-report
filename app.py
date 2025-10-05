@@ -2,7 +2,7 @@ from flask import Flask, Response, jsonify
 from pathlib import Path
 import json, os, time, hashlib
 
-FILE = Path("/home/chris/midi_recordings/time_report.txt")
+FILE = Path("/home/chris/time-report/report.json")
 app = Flask(__name__)
 
 def file_etag(p: Path) -> str:

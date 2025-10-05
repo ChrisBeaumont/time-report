@@ -51,49 +51,27 @@ def current():
         data = {}
 
     days = data.get("days")
-    if not isinstance(days, dict):
-        days = {}
-        data["days"] = days
-
     weeks = data.get("weeks")
-    if not isinstance(weeks, dict):
-        weeks = {}
-        data["weeks"] = weeks
-
     months = data.get("months")
-    if not isinstance(months, dict):
-        months = {}
-        data["months"] = months
 
     today = date.today()
     day_key = today.isoformat()
 
-    # Weeks are Sunday..Saturday, per example key format
+    # Weeks are Sunday..Saturday
     days_since_sunday = (today.weekday() + 1) % 7
     week_start = today - timedelta(days=days_since_sunday)
     week_end = week_start + timedelta(days=6)
     week_key = f"{week_start.isoformat()}..{week_end.isoformat()}"
-
     month_key = f"{today.year:04d}-{today.month:02d}"
 
-    changed = False
-
     if day_key not in days:
-        days[day_key] = "00:00:00"
-        changed = True
+        days[day_key] = "0h0m"
 
     if week_key not in weeks:
-        weeks[week_key] = "00:00:00"
-        changed = True
+        weeks[week_key] = "0h0m"
 
     if month_key not in months:
-        months[month_key] = "00:00:00"
-        changed = True
-
-    if changed:
-        # Create parent directory if needed
-        FILE.parent.mkdir(parents=True, exist_ok=True)
-        FILE.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+        months[month_key] = "0h0m"
 
     payload = {
         "day": {day_key: days[day_key]},

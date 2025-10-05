@@ -15,11 +15,12 @@ def parse_args():
     p.add_argument("--recursive", action="store_true", help="Recurse under the given path", default=True)
     return p.parse_args()
 
-def hhmmss(seconds: float) -> str:
-    s = int(round(seconds))
-    h, r = divmod(s, 3600)
-    m, s = divmod(r, 60)
-    return f"{h:02d}:{m:02d}:{s:02d}"
+
+def pretty_duration(seconds: float) -> str:
+    hours = seconds // 3600
+    minutes = (seconds % 3600) // 60
+    return f"{hours}h{minutes}m"
+
 
 def find_date_from_path(p: Path):
     """
@@ -119,16 +120,16 @@ def main():
     }
 
     for d in sorted(day_sums):
-        output["days"][d.isoformat()] = hhmmss(day_sums[d])
+        output["days"][d.isoformat()] = pretty_duration(day_sums[d])
 
     for ws in sorted(week_sums):
         we = ws + timedelta(days=6)
-        output["weeks"][f"{ws.isoformat()}..{we.isoformat()}"] = hhmmss(week_sums[ws])
+        output["weeks"][f"{ws.isoformat()}..{we.isoformat()}"] = pretty_duration(week_sums[ws])
 
     for (y, m) in sorted(month_sums):
-        output["months"][f"{y}-{m:02d}"] = hhmmss(month_sums[(y, m)])
+        output["months"][f"{y}-{m:02d}"] = pretty_duration(month_sums[(y, m)])
 
-    output["total"] = hhmmss(total)
+    output["total"] = pretty_duration(total)
 
     for path, msg in errors:
         output["errors"].append({"path": path, "message": msg})

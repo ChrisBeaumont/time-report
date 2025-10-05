@@ -17,8 +17,8 @@ def parse_args():
 
 
 def pretty_duration(seconds: float) -> str:
-    hours = seconds // 3600
-    minutes = (seconds % 3600) // 60
+    hours = int(seconds // 3600)
+    minutes = int((seconds % 3600) // 60)
     return f"{hours}h{minutes}m"
 
 
